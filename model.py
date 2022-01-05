@@ -235,18 +235,12 @@ class Decoder(nn.Module):
         self.p_decoder_dropout = hparams.p_decoder_dropout
         self.p_teacher_forcing = hparams.p_teacher_forcing
 
-        self.prenet_f0 = ConvNorm(
-            1, hparams.prenet_f0_dim,
-            kernel_size=hparams.prenet_f0_kernel_size,
-            padding=max(0, int(hparams.prenet_f0_kernel_size/2)),
-            bias=False, stride=1, dilation=1)
-
         self.prenet = Prenet(
             hparams.n_mel_channels * hparams.n_frames_per_step,
             [hparams.prenet_dim, hparams.prenet_dim])
 
         self.attention_rnn = nn.LSTMCell(
-            hparams.prenet_dim + hparams.prenet_f0_dim + self.encoder_embedding_dim,
+            hparams.prenet_dim + self.encoder_embedding_dim,
             hparams.attention_rnn_dim)
 
         self.attention_layer = Attention(
@@ -418,7 +412,7 @@ class Decoder(nn.Module):
         gate_prediction = self.gate_layer(decoder_hidden_attention_context)
         return decoder_output, gate_prediction, self.attention_weights
 
-    def forward(self, memory, decoder_inputs, memory_lengths, f0s):
+    def forward(self, memory, decoder_inputs, memory_lengths, f0s=None):
         """ Decoder forward pass for training
         PARAMS
         ------
@@ -438,23 +432,11 @@ class Decoder(nn.Module):
         decoder_inputs = torch.cat((decoder_input, decoder_inputs), dim=0)
         decoder_inputs = self.prenet(decoder_inputs)
 
-        # audio features
-        f0_dummy = self.get_end_f0(f0s)
-        f0s = torch.cat((f0s, f0_dummy), dim=2)
-        f0s = F.relu(self.prenet_f0(f0s))
-        f0s = f0s.permute(2, 0, 1)
-
         self.initialize_decoder_states(
             memory, mask=~get_mask_from_lengths(memory_lengths))
 
         mel_outputs, gate_outputs, alignments = [], [], []
         while len(mel_outputs) < decoder_inputs.size(0) - 1:
-            if len(mel_outputs) == 0 or np.random.uniform(0.0, 1.0) <= self.p_teacher_forcing:
-                decoder_input = torch.cat((decoder_inputs[len(mel_outputs)],
-                                           f0s[len(mel_outputs)]), dim=1)
-            else:
-                decoder_input = torch.cat((self.prenet(mel_outputs[-1]),
-                                           f0s[len(mel_outputs)]), dim=1)
             mel_output, gate_output, attention_weights = self.decode(
                 decoder_input)
             mel_outputs += [mel_output.squeeze(1)]
@@ -466,7 +448,7 @@ class Decoder(nn.Module):
 
         return mel_outputs, gate_outputs, alignments
 
-    def inference(self, memory, f0s):
+    def inference(self, memory, f0s=None):
         """ Decoder inference
         PARAMS
         ------
@@ -481,19 +463,8 @@ class Decoder(nn.Module):
         decoder_input = self.get_go_frame(memory)
 
         self.initialize_decoder_states(memory, mask=None)
-        f0_dummy = self.get_end_f0(f0s)
-        f0s = torch.cat((f0s, f0_dummy), dim=2)
-        f0s = F.relu(self.prenet_f0(f0s))
-        f0s = f0s.permute(2, 0, 1)
-
         mel_outputs, gate_outputs, alignments = [], [], []
         while True:
-            if len(mel_outputs) < len(f0s):
-                f0 = f0s[len(mel_outputs)]
-            else:
-                f0 = f0s[-1] * 0
-
-            decoder_input = torch.cat((self.prenet(decoder_input), f0), dim=1)
             mel_output, gate_output, alignment = self.decode(decoder_input)
 
             mel_outputs += [mel_output.squeeze(1)]
@@ -528,10 +499,6 @@ class Decoder(nn.Module):
         decoder_input = self.get_go_frame(memory)
 
         self.initialize_decoder_states(memory, mask=None)
-        f0_dummy = self.get_end_f0(f0s)
-        f0s = torch.cat((f0s, f0_dummy), dim=2)
-        f0s = F.relu(self.prenet_f0(f0s))
-        f0s = f0s.permute(2, 0, 1)
 
         mel_outputs, gate_outputs, alignments = [], [], []
         for i in range(len(attention_map)):
@@ -616,7 +583,7 @@ class Tacotron2(nn.Module):
         embedded_speakers = self.speaker_embedding(speaker_ids)[:, None]
         if hasattr(self, 'gst'):
             if isinstance(style_input, int):
-                query = torch.zeros(1, 1, self.gst.encoder.ref_enc_gru_size)
+                query = torch.zeros(1, 1, self.gst.encoder.ref_enc_gru_size).cuda()
                 GST = torch.tanh(self.gst.stl.embed)
                 key = GST[style_input].unsqueeze(0).expand(1, -1, -1)
                 embedded_gst = self.gst.stl.attention(query, key)
