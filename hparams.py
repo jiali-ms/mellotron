@@ -9,16 +9,16 @@ def create_hparams(hparams_string=None, verbose=False):
         ################################
         # Experiment Parameters        #
         ################################
-        epochs=50000,
+        epochs=150000,
         iters_per_checkpoint=500,
         seed=1234,
         dynamic_loss_scaling=True,
         fp16_run=False,
-        distributed_run=False,
+        distributed_run=True,
         dist_backend="nccl",
-        dist_url="tcp://localhost:54321",
+        dist_url="tcp://localhost:54325",
         cudnn_enabled=True,
-        cudnn_benchmark=False,
+        cudnn_benchmark=True,
         ignore_layers=['speaker_embedding.weight'],
 
         ################################
@@ -110,9 +110,8 @@ def create_hparams(hparams_string=None, verbose=False):
         learning_rate_anneal=50000,
         weight_decay=1e-6,
         grad_clip_thresh=1.0,
-        batch_size=32,
+        batch_size=64,
         mask_padding=True,  # set model's padded outputs to padded values
-
     )
 
     if hparams_string:

@@ -6,16 +6,13 @@ from torch.autograd import Variable
 from torch import nn
 from torch.nn import functional as F
 from layers import ConvNorm, LinearNorm
-from utils import to_gpu, get_mask_from_lengths
+from utils import get_mask_from_lengths
 from modules import GST
 
 drop_rate = 0.5
 
 def load_model(hparams):
-    model = Tacotron2(hparams).cuda()
-    if hparams.fp16_run:
-        model.decoder.attention_layer.score_mask_value = finfo('float16').min
-
+    model = Tacotron2(hparams)
     return model
 
 
@@ -185,7 +182,7 @@ class Encoder(nn.Module):
 
     def forward(self, x, input_lengths):
         if x.size()[0] > 1:
-            print("here")
+            # print("here")
             x_embedded = []
             for b_ind in range(x.size()[0]):  # TODO: Speed up
                 curr_x = x[b_ind:b_ind+1, :, :input_lengths[b_ind]].clone()
@@ -575,21 +572,6 @@ class Tacotron2(nn.Module):
         self.speaker_embedding = nn.Embedding(
             hparams.n_speakers, hparams.speaker_embedding_dim)
 
-    def parse_batch(self, batch):
-        text_padded, input_lengths, mel_padded, gate_padded, \
-            output_lengths, speaker_ids, f0_padded = batch
-        text_padded = to_gpu(text_padded).long()
-        input_lengths = to_gpu(input_lengths).long()
-        max_len = torch.max(input_lengths.data).item()
-        mel_padded = to_gpu(mel_padded).float()
-        gate_padded = to_gpu(gate_padded).float()
-        output_lengths = to_gpu(output_lengths).long()
-        speaker_ids = to_gpu(speaker_ids.data).long()
-        f0_padded = to_gpu(f0_padded).float()
-        return ((text_padded, input_lengths, mel_padded, max_len,
-                 output_lengths, speaker_ids, f0_padded),
-                (mel_padded, gate_padded))
-
     def parse_output(self, outputs, output_lengths=None):
         if self.mask_padding and output_lengths is not None:
             mask = ~get_mask_from_lengths(output_lengths)
@@ -634,7 +616,7 @@ class Tacotron2(nn.Module):
         embedded_speakers = self.speaker_embedding(speaker_ids)[:, None]
         if hasattr(self, 'gst'):
             if isinstance(style_input, int):
-                query = torch.zeros(1, 1, self.gst.encoder.ref_enc_gru_size).cuda()
+                query = torch.zeros(1, 1, self.gst.encoder.ref_enc_gru_size)
                 GST = torch.tanh(self.gst.stl.embed)
                 key = GST[style_input].unsqueeze(0).expand(1, -1, -1)
                 embedded_gst = self.gst.stl.attention(query, key)
@@ -666,7 +648,7 @@ class Tacotron2(nn.Module):
         embedded_speakers = self.speaker_embedding(speaker_ids)[:, None]
         if hasattr(self, 'gst'):
             if isinstance(style_input, int):
-                query = torch.zeros(1, 1, self.gst.encoder.ref_enc_gru_size).cuda()
+                query = torch.zeros(1, 1, self.gst.encoder.ref_enc_gru_size)
                 GST = torch.tanh(self.gst.stl.embed)
                 key = GST[style_input].unsqueeze(0).expand(1, -1, -1)
                 embedded_gst = self.gst.stl.attention(query, key)

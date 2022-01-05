@@ -1,4 +1,4 @@
-matplotlib==2.1.0
+matplotlib
 tensorflow==1.15.2
 inflect==0.2.5
 librosa==0.6.0
